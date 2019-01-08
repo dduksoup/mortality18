@@ -1,304 +1,478 @@
---========================= Automate the Mortality Assumption =========================
+--========================= AUTOMATE THE MORTALITY ASSUMPTION =========================
 --=====================================================================================
 
-Use Mortality_Study
+USE MORTALITY_STUDY
 
 --=====================================================================================
---=================================== Update Section ==================================
--- Update 25/12/2018
--- Version 1.1 : Create the new Mortality Database to merge and config all data  
+--=================================== UPDATE SECTION ==================================
+-- UPDATE 25/12/2018
+-- VERSION 1.1 : CREATE THE NEW MORTALITY DATABASE TO MERGE AND CONFIG ALL DATA  
 
--- Adding the Term Rider in this Query
-
---=====================================================================================
---=================================== Update Table ====================================
--- Prophet Result: 201712 
--- Claim Data    : 
--- Prophet Table :
--- Spectial Case :
-
+-- ADDING THE TERM RIDER IN THIS QUERY
 
 --=====================================================================================
--- List of tables request before running
--- Mort_Table
--- Prophet_Table
--- Prophet_Result
--- Claim Data
--- Prophet_Table_Fixed
---======================= Control to choose the Prophet_Result ========================
-
-declare @Pre_data nvarchar(20)
-declare @Cur_data nvarchar(20)
-declare @Claim_data nvarchar(20)
+--=================================== UPDATE TABLE ====================================
+-- PROPHET RESULT: 201712 
+-- CLAIM DATA    : 
+-- PROPHET TABLE :
+-- SPECTIAL CASE :
 
 
-Set @Pre_data = '_201612'       ---- !!!!! Change Here !!!!!         
-Set @Cur_data = '_201712'       ---- !!!!! Change Here !!!!!
--- Set @Claim_data = 'CA_Database_201810'     ---- !!!!! Change Here !!!!!
+--=====================================================================================
+-- LIST OF TABLES REQUEST BEFORE RUNNING
+-- MORT_TABLE
+-- PROPHET_TABLE
+-- PROPHET_RESULT
+-- CLAIM DATA
+-- PROPHET_TABLE_FIXED
+--======================= CONTROL TO CHOOSE THE PROPHET_RESULT ========================
 
--- Remark: After change the Control, Please Click to run all query to receive the result
+DECLARE @PRE_DATA NVARCHAR(20)
+DECLARE @CUR_DATA NVARCHAR(20)
+DECLARE @CLAIM_DATA NVARCHAR(20)
+
+
+SET @PRE_DATA = '_201612'       ---- !!!!! CHANGE HERE !!!!!         
+SET @CUR_DATA = '_201712'       ---- !!!!! CHANGE HERE !!!!!
+-- SET @CLAIM_DATA = 'CA_DATABASE_201810'     ---- !!!!! CHANGE HERE !!!!!
+
+-- REMARK: AFTER CHANGE THE CONTROL, PLEASE CLICK TO RUN ALL QUERY TO RECEIVE THE RESULT
 --======================================================================================
 
--- For Merging all both database together
+-- FOR MERGING ALL BOTH DATABASE TOGETHER
 
 EXECUTE('
-create view [Prophet_Merge] as
+CREATE VIEW [PROPHET_MERGE] AS
 
-select *,''Pre_result'' as [Reslt_Date]
-from Prophet_Result'+@Pre_data+'
+SELECT *,''PRE_RESULT'' AS [RESLT_DATE]
+FROM PROPHET_RESULT'+@PRE_DATA+'
 
-union all
-
-
-select *,''Cur_result'' as [Reslt_Date]
-from Prophet_Result'+@Cur_data+'
-
-go')
+UNION ALL
 
 
--- Create a Prophet result table that merge together 
+SELECT *,''CUR_RESULT'' AS [RESLT_DATE]
+FROM PROPHET_RESULT'+@CUR_DATA+'
+
+GO')
+
+
+-- CREATE A PROPHET RESULT TABLE THAT MERGE TOGETHER 
 
 --EXECUTE('
---select * into [Prophet_Merge_All'+@Pre_data+''+@Cur_data+']
---from [Prophet_Merge]
+--SELECT * INTO [PROPHET_MERGE_ALL'+@PRE_DATA+''+@CUR_DATA+']
+--FROM [PROPHET_MERGE]
 
---go')
+--GO')
 
 EXECUTE('
-select * into [Prophet_Merge_All]
-from [Prophet_Merge]
+SELECT * INTO [PROPHET_MERGE_ALL]
+FROM [PROPHET_MERGE]
 
-go')
-
-
--- Drop view
-drop view [Prophet_Merge]
-
-go
+GO')
 
 
---======================= Fixed Prophet_Code before Jan2018 ============================
--- Using: Prophet_Table_Fixed
+-- DROP VIEW
+DROP VIEW [PROPHET_MERGE]
 
-create view [Prophet_Table_New] as
-
-select o.[DATA],o.Product,o.[SYSTEM_NAME / PRODUCT_PORT],o.[PACKAGE_CODE],o.[PLAN_COMPONENT],o.[SUB_CHANNEL],o.[MORT_TAB],o.[SUB_PLAN]
-,IIF(x.filename is not null,x.Last_filename,o.[FILENAME]) as [FILENAME]
-,o.[VALN_INT],o.[CSV_INT],o.[POL_TERM],o.[PRM_TERM],o.[LOAN_INT],o.[LOAN_INT_VAL],o.[ORIG_PACK_CODE],o.[SPCODE],o.[TL_VaLint_Ori],o.[comment],o.[Channel],o.[Sub_Channel Name],o.[Description],o.[Product_Type],
-		o.[Port]
-      ,o.[Type]
-from Prophet_Table as o left join Prophet_Table_Fixed as x on( o.FILENAME = x.filename) 
-
-go
+GO
 
 
+--======================= FIXED PROPHET_CODE BEFORE JAN2018 ============================
+-- USING: PROPHET_TABLE_FIXED
+-- NOTE: This query updates the PROPHET_TABLE table with updated FILENAMES, which switches
+-- back some filenames to older versions, due to some inconsistencies between them
+-- when trying to map policies between themselves.
 
---================================ Claim Data here     =================================
+CREATE VIEW [PROPHET_TABLE_NEW] AS
+
+SELECT O.[DATA]
+	,O.PRODUCT
+	,O.[SYSTEM_NAME / PRODUCT_PORT]
+	,O.[PACKAGE_CODE]
+	,O.[PLAN_COMPONENT]
+	,O.[SUB_CHANNEL]
+	,O.[MORT_TAB]
+	,O.[SUB_PLAN]
+	,IIF(X.FILENAME IS NOT NULL
+		,X.LAST_FILENAME
+		,O.[FILENAME]
+		) AS [FILENAME]
+	,O.[VALN_INT]
+	,O.[CSV_INT]
+	,O.[POL_TERM]
+	,O.[PRM_TERM]
+	,O.[LOAN_INT]
+	,O.[LOAN_INT_VAL]
+	,O.[ORIG_PACK_CODE]
+	,O.[SPCODE]
+	,O.[TL_VALINT_ORI]
+	,O.[COMMENT]
+	,O.[CHANNEL]
+	,O.[SUB_CHANNEL NAME]
+	,O.[DESCRIPTION]
+	,O.[PRODUCT_TYPE]
+	,O.[PORT]
+	,O.[TYPE]
+FROM PROPHET_TABLE AS O 
+LEFT JOIN PROPHET_TABLE_FIXED AS X ON (O.FILENAME = X.FILENAME) 
+
+GO
+
+
+
+--================================ CLAIM DATA HERE     =================================
 
 
 --=============================================================================================================================================================================================================
--- Create Indicator for mapping in Prophet Table!!
+-- CREATE INDICATOR FOR MAPPING IN PROPHET TABLE!!
 
-create view Claim_Mort1 as
+-- This first query filters out only relevant claim data (deaths) and joins relevant information
+-- from MAP_DATA table, such as:
+-- MASTER_POLICY, CERNO_POLNO, PLAN_COMPONENT, PACKAGE_CODE, SUB_CHANNEL...
+-- data important for later data processing and categorization
 
-select d.[Port_Type] as [M_Port_Type]
-      ,d.[MASTER_POLICY] as [M_Master_Policy]
-      ,d.[CERNO_POLNO] as [M_Cerno_polno]
-      ,d.[PLAN_COMPONENT] as [M_PLAN_COMPONENT]
-	  ,d.[PLAN_COMPONENT_02] as [M_PLAN_COMPONENT_02]
-      ,d.[PACKAGE_CODE]  as [M_PACKAGE_CODE]
-      ,d.[SUB_CHANNEL]   as [M_SUB_CHANNEL]
-      ,d.[SUB_OFFICE]    as [M_SUB_OFFICE]
-      ,d.[DEPENDENT_CODE] as [M_DEPENDENT_CODE],c.*
-from [Claim extract] as c left join Map_Data as d on( 
-CASE WHEN c.PRODUCT_TYPE ='GM' then C.CERTIFICATE_NO 
-	 WHEN c.PRODUCT_TYPE = 'GR' Then C.GYRT_GR_CER
-	 else  C.[CONTRACT_NO] end  = d.cerno_polno 
+CREATE VIEW CLAIM_MORT1 AS
 
-and iif( c.PRODUCT_TYPE = 'GM' , c.master_policy,'') = iif( c.PRODUCT_TYPE = 'GM' , d.master_policy,'')
+SELECT D.[PORT_TYPE]			AS [M_PORT_TYPE]
+      ,D.[MASTER_POLICY]		AS [M_MASTER_POLICY]
+      ,D.[CERNO_POLNO]			AS [M_CERNO_POLNO]
+      ,D.[PLAN_COMPONENT]		AS [M_PLAN_COMPONENT]
+	  ,D.[PLAN_COMPONENT_02]	AS [M_PLAN_COMPONENT_02]
+      ,D.[PACKAGE_CODE]			AS [M_PACKAGE_CODE]
+      ,D.[SUB_CHANNEL]			AS [M_SUB_CHANNEL]
+      ,D.[SUB_OFFICE]			AS [M_SUB_OFFICE]
+      ,D.[DEPENDENT_CODE]		AS [M_DEPENDENT_CODE]
+	  ,C.*
+FROM [CLAIM EXTRACT] AS C 
+LEFT JOIN MAP_DATA AS D ON 
 
-and iif( c.PRODUCT_TYPE = 'GR' ,c.Package_Code,iif( c.PRODUCT_TYPE = 'GM' and c.Master_Policy like 'GCS%' ,'',iif(c.PRODUCT_TYPE = 'PA','' ,c.Rider_Code)))  = iif( c.PRODUCT_TYPE = 'GM' and c.Master_Policy like 'GCS%','',iif(c.PRODUCT_TYPE = 'PA','' ,d.[PLAN_COMPONENT] ) )
-and iif( c.PRODUCT_TYPE = 'GR' ,'',iif(c.PRODUCT_TYPE = 'PA','' ,c.Package_Code ))  = iif( c.PRODUCT_TYPE = 'GR' ,'',iif(c.PRODUCT_TYPE = 'PA','' ,d.[PACKAGE_CODE] ))
+-- MAPPING CONDITION (1)
+-- In CLAIM_EXTRACT dataset, a policy's certificate/policy number is inserted into
+-- a different field depending on its product type.
 
-and iif( c.PRODUCT_TYPE = 'GR' ,c.GYRT_GRP_TYPE,'')  = iif( c.PRODUCT_TYPE = 'GR' ,left(d.Master_Policy,2),'')  
-and iif( c.PRODUCT_TYPE = 'GR' ,c.GYRT_GRP_pol,'')  = iif( c.PRODUCT_TYPE = 'GR' ,right(d.Master_Policy,6),'')  
-and iif( c.PRODUCT_TYPE = 'GR' ,c.GYRT_SUB_OFF,'')  = iif( c.PRODUCT_TYPE = 'GR' ,d.SUB_OFFICE,'')  
-and iif( c.PRODUCT_TYPE = 'GR' ,c.GYRT_DEP_COD,'')  = iif( c.PRODUCT_TYPE = 'GR' ,d.DEPENDENT_CODE,'')  
+(CASE 
+	WHEN C.PRODUCT_TYPE = 'GM'	THEN C.CERTIFICATE_NO 
+	WHEN C.PRODUCT_TYPE = 'GR'	THEN C.GYRT_GR_CER
+	 ELSE C.[CONTRACT_NO] 
+ END = D.CERNO_POLNO			
+
+-- MAPPING CONDITION (2)
+-- MASTER_POLICY information has to match for GM policies.
+	AND IIF( C.PRODUCT_TYPE = 'GM' , C.MASTER_POLICY,'') = IIF( C.PRODUCT_TYPE = 'GM' , D.MASTER_POLICY,'')
+
+-- MAPPING CONDITION (3)
+-- For GR policies, Claim.PACKAGE_CODE information has to match MapData.PLAN_COMPONENT
+-- Else: for GM and GCSxxx, exempt
+-- Else: for PA policies, exempt as well
+
+	AND IIF( C.PRODUCT_TYPE = 'GR' ,C.PACKAGE_CODE,IIF( C.PRODUCT_TYPE = 'GM' AND C.MASTER_POLICY LIKE 'GCS%' ,'',IIF(C.PRODUCT_TYPE = 'PA','' ,C.RIDER_CODE)))  
+		= IIF( C.PRODUCT_TYPE = 'GM' AND C.MASTER_POLICY LIKE 'GCS%','',IIF(C.PRODUCT_TYPE = 'PA','' ,D.[PLAN_COMPONENT] ) )
+
+-- MAPPING CONDITION (4)
+-- If PRODUCT_TYPE is not GR or PA, then Claim and MapData PACKAGE_CODE information have to match.
+
+	AND IIF( C.PRODUCT_TYPE = 'GR' ,'',IIF(C.PRODUCT_TYPE = 'PA','' ,C.PACKAGE_CODE )) 
+		= IIF( C.PRODUCT_TYPE = 'GR' ,'',IIF(C.PRODUCT_TYPE = 'PA','' ,D.[PACKAGE_CODE] ))
+
+-- MAPPING CONDITIONS (5)
+-- For GR policies:
+-- Claim.GYRT_GRP_TYPE must match first two characters of MapData.MASTER_POLICY
+-- Claim.GYRT_GRP_POL must match the last 6 characters of MapData.MASTER_POLICY
+-- Claim.GYRT_SUB_OFF must match MapData.SUB_OFFICE
+-- Claim.GYRT_DEP_COD must match MapData.DEPENDENT_CODE
+-- For PA policies:
+-- Claim.PRODUCT_TYPE must match MapData.PORT_TYPE
+
+	AND IIF( C.PRODUCT_TYPE = 'GR' ,C.GYRT_GRP_TYPE,'')  = IIF( C.PRODUCT_TYPE = 'GR' ,LEFT(D.MASTER_POLICY,2),'')  
+	AND IIF( C.PRODUCT_TYPE = 'GR' ,C.GYRT_GRP_POL,'')  = IIF( C.PRODUCT_TYPE = 'GR' ,RIGHT(D.MASTER_POLICY,6),'')  
+	AND IIF( C.PRODUCT_TYPE = 'GR' ,C.GYRT_SUB_OFF,'')  = IIF( C.PRODUCT_TYPE = 'GR' ,D.SUB_OFFICE,'')  
+	AND IIF( C.PRODUCT_TYPE = 'GR' ,C.GYRT_DEP_COD,'')  = IIF( C.PRODUCT_TYPE = 'GR' ,D.DEPENDENT_CODE,'')  
+	AND IIF( C.PRODUCT_TYPE = 'PA' ,C.PRODUCT_TYPE,'')  = IIF( C.PRODUCT_TYPE = 'PA' ,D.PORT_TYPE,'')  
+)
+
+-- Filter Conditions
+-- 1. Claim "notice date" must have happened in Buddhist year 2560
+-- 2. Claim type must be death of insured
+-- 3. Claim status must be paid
+
+WHERE LEFT(CAST(C.NOTICE_DATE AS NUMERIC) ,4) = '2560'
+----AND C.PRODUCT_TYPE ='GR'
+AND C.CLAIM_TYPE ='DEATH'										-- *********
+AND C.CLAIM_STS_DESC = 'PAID'									-- *********
+
+GO
 
 
-and iif( c.PRODUCT_TYPE = 'PA' ,c.Product_type,'')  = iif( c.PRODUCT_TYPE = 'PA' ,d.Port_Type,'')  
- )
 
-where left(cast(c.NOTICE_DATE as numeric) ,4) = '2560'
-----and c.PRODUCT_TYPE ='GR'
-and c.CLAIM_TYPE ='DEATH'
-and c.CLAIM_STS_DESC = 'PAID'
+-- In this query, we join further relevant information from PROPHET_TABLE
+-- such as FILENAME, SPCODE, and ORIG_PACK_CODE.
 
-go
+CREATE VIEW CLAIM_MORT2 AS
 
-
-
-
-
-create view Claim_Mort2 as
-
-select t.[filename],t.SPCODE,t.ORIG_PACK_CODE,c.*
-from Claim_Mort1 as c left join [Prophet_Table] as t on( 
-  -- Plan
-  iif(c.M_port_Type = 'PA','Plan',iif(c.M_port_Type = 'GYRT','',c.[M_PLAN_COMPONENT])) = iif(c.M_port_Type = 'PA','Plan',iif(c.M_port_Type = 'GYRT','',t.[PLAN_COMPONENT])) 
+SELECT T.[FILENAME]
+	,T.SPCODE
+	,T.ORIG_PACK_CODE
+	,C.*
+FROM CLAIM_MORT1 AS C 
+LEFT JOIN [PROPHET_TABLE] AS T ON( 
+  -- PLAN
+  IIF(C.M_PORT_TYPE = 'PA','PLAN',IIF(C.M_PORT_TYPE = 'GYRT','',C.[M_PLAN_COMPONENT])) = IIF(C.M_PORT_TYPE = 'PA','PLAN',IIF(C.M_PORT_TYPE = 'GYRT','',T.[PLAN_COMPONENT])) 
   
-  -- Sub_Channel
-  AND iif(c.M_port_Type = 'GYRT','',CAST(c.[M_SUB_CHANNEL] AS NVARCHAR)) = iif(c.M_port_Type = 'GYRT','',CAST(t.[SUB_CHANNEL] AS NVARCHAR) )
+  -- SUB_CHANNEL
+  AND IIF(C.M_PORT_TYPE = 'GYRT','',CAST(C.[M_SUB_CHANNEL] AS NVARCHAR)) = IIF(C.M_PORT_TYPE = 'GYRT','',CAST(T.[SUB_CHANNEL] AS NVARCHAR) )
   
-  -- Packagecode
-  -- AND iif(c.M_port_Type = 'PA','Pack',c.[M_PACKAGE_CODE]) = iif(c.M_port_Type = 'PA','Pack',t.[PACKAGE_CODE])
-  AND iif(c.M_port_Type = 'PA','Pack',iif(c.M_port_Type = 'GYRT',c.M_Master_Policy,iif(c.M_port_Type = 'GMDT','',c.[M_PACKAGE_CODE]))) = iif(c.M_port_Type = 'PA','Pack',iif(c.M_port_Type = 'GMDT','',t.[PACKAGE_CODE]))
+  -- PACKAGECODE
+  -- AND IIF(C.M_PORT_TYPE = 'PA','PACK',C.[M_PACKAGE_CODE]) = IIF(C.M_PORT_TYPE = 'PA','PACK',T.[PACKAGE_CODE])
+  AND IIF(C.M_PORT_TYPE = 'PA','PACK',IIF(C.M_PORT_TYPE = 'GYRT',C.M_MASTER_POLICY,IIF(C.M_PORT_TYPE = 'GMDT','',C.[M_PACKAGE_CODE]))) = IIF(C.M_PORT_TYPE = 'PA','PACK',IIF(C.M_PORT_TYPE = 'GMDT','',T.[PACKAGE_CODE]))
 
-  -- Packagecode for GMDT 
-  AND (( iif(c.M_port_Type = 'GMDT',c.M_Master_Policy,'') = iif(c.M_port_Type = 'GMDT',t.[PACKAGE_CODE],'') AND iif(c.M_port_Type = 'GMDT',c.[M_PLAN_COMPONENT_02],'') = iif(c.M_port_Type = 'GMDT',t.SUB_PLAN,'') )
-       OR ( iif(c.M_port_Type = 'GMDT',c.[M_PACKAGE_CODE],'') = iif(c.M_port_Type = 'GMDT',t.[PACKAGE_CODE],'') AND iif(c.M_port_Type = 'GMDT',c.M_Master_Policy,'') = iif(c.M_port_Type = 'GMDT',t.SUB_PLAN,'') ) )
-  -- Port_Type
-  AND iif(c.M_Port_Type ='PA','PA',iif(c.M_Port_Type ='YODA','YODA',iif(c.M_Port_Type ='GRP','GRP_MODEL',''))) = iif(c.M_Port_Type ='PA',t.Data,iif(c.M_Port_Type='Yoda',t.Data,iif(c.M_Port_Type ='GRP',t.Data,'')))   )
---where c.PRODUCT_TYPE ='GM'
---order by c.M_Master_Policy,c.M_Cerno_polno
+  -- PACKAGECODE FOR GMDT 
+  AND (( IIF(C.M_PORT_TYPE = 'GMDT',C.M_MASTER_POLICY,'') = IIF(C.M_PORT_TYPE = 'GMDT',T.[PACKAGE_CODE],'') AND IIF(C.M_PORT_TYPE = 'GMDT',C.[M_PLAN_COMPONENT_02],'') = IIF(C.M_PORT_TYPE = 'GMDT',T.SUB_PLAN,'') )
+       OR ( IIF(C.M_PORT_TYPE = 'GMDT',C.[M_PACKAGE_CODE],'') = IIF(C.M_PORT_TYPE = 'GMDT',T.[PACKAGE_CODE],'') AND IIF(C.M_PORT_TYPE = 'GMDT',C.M_MASTER_POLICY,'') = IIF(C.M_PORT_TYPE = 'GMDT',T.SUB_PLAN,'') ) )
+  -- PORT_TYPE
+  AND IIF(C.M_PORT_TYPE ='PA','PA',IIF(C.M_PORT_TYPE ='YODA','YODA',IIF(C.M_PORT_TYPE ='GRP','GRP_MODEL',''))) = IIF(C.M_PORT_TYPE ='PA',T.DATA,IIF(C.M_PORT_TYPE='YODA',T.DATA,IIF(C.M_PORT_TYPE ='GRP',T.DATA,'')))   )
+--WHERE C.PRODUCT_TYPE ='GM'
+--ORDER BY C.M_MASTER_POLICY,C.M_CERNO_POLNO
 
-go
-
-
+GO
 
 
-create view Claim_Mort3 as
 
-select case when t.Last_Filename is not null then t.Last_Filename
-	        else c.[filename] end as [FILENAME],c.[ORIG_PACK_CODE]
-,c.[SPCODE],c.[M_Port_Type],c.[M_Master_Policy],c.[M_Cerno_polno],c.[M_PLAN_COMPONENT],c.[M_PLAN_COMPONENT_02],c.[M_PACKAGE_CODE],c.[M_SUB_CHANNEL],c.[M_SUB_OFFICE]
-,c.[M_DEPENDENT_CODE],c.[SYSTEM_NAME],c.[RUNNING],c.[PRODUCT_TYPE],c.[CONTRACT_NO],c.[MASTER_POLICY],c.[CERTIFICATE_NO],c.[GYRT_GRP_TYPE],c.[GYRT_GRP_POL],c.[GYRT_SUB_OFF],c.[GYRT_GR_CER]
-,c.[GYRT_DEP_COD],c.[INSURED_ID],c.[OCCUPATION_CODE],c.[CLAIM_YEAR],c.[CLM_NOTICE_NO],c.[ALT_CLAIM_TYPE],c.[ALT_CLAIM_YEAR],c.[ALT_CLAIM_NOTICE]
-,c.[ALT_CLAIM_STS],c.[POLICY_STS],c.[CLAIM_STS],c.[CLAIM_STS_DESC],c.[CLAIM_TYPE_CODE],c.[CLAIM_TYPE],c.[PACKAGE_CODE],c.[PACKAGE_DESC],c.[RIDER_CODE]
-,c.[RIDER_NAME],c.[DOI_DATE],c.[EFFECTIVE_DATE],c.[FST_ISSUE_DATE],c.[ISSUE_DATE],c.[EXPIRE_DATE],c.[DOC_RCV_DATE],c.[NOTICE_DATE],c.[CLM_APV_DATE],c.[CLM_PAYMENT_DATE]
-,c.[CLAIM_INC_DATE],c.[CAUSE_OF_DTH_CODE],c.[DIAGNOSIS],c.[CAUSE_DESC],c.[CAUSE_OF_NUL_CODE],c.[NULLIFY_DESC],c.[IPD_OPD],c.[HOSPITAL]
-,c.[ADMISSION_DATE],c.[DISCHARGE_DATE],c.[LEN_OF_STAY],c.[CURR],c.[TOTAL_CLM_AMT],c.[ACTUAL_CLM_AMT],c.[POL_UNPAID_PREMIUM],c.[POL_UNPAID_LOAN],c.[POL_UNPAID_LOAN_INT]
-,c.[DEPOSIT_COND_BONUS],c.[PAID_SUM_INSURED],c.[CASH_VALUE],c.[PREMIUM_PAID],c.[CLM_PMT_MTD],c.[CLM_PMT_MTD_DESC],c.[BANK_CODE],c.[ACCOUNT_NO],c.[AGENT_CODE],c.[AGENT_NAME],c.[SVC_AGENT_CODE],c.[SVC_AGENT_NAME],c.[CHANNEL_CODE],c.[SUB_CHANNEL_CODE],c.[OWNER_NATIONAL_ID],c.[OWNER_NAME],c.[PAYEE_NAME],c.[LIFE_NO],c.[LIFE_NAME],c.[DATE_OF_BIRTH],c.[APPROVE_NAME]
-,c.[GUSER],c.[GRUNDT],c.[GRUNTM],c.[PPO_FLAG],c.[BNF_CODE],c.[CLAIM_ID],c.[CLAIM_REG_ID],c.[CLAIM_ISS_AGE]
-,IIF(c.[CLAIM_GENDER] ='M',0,1) as [CLAIM_GENDER],c.[SUM_INSURED],c.[HS_BILL_FOR_ICU],c.[BILL_ROOM_BROAD],c.[BILL_PHARMA],c.[BILL_MIS_EXPEND]
-,c.[BILL_SURGICAL],c.[BILL_OPERATION_ROOM],c.[BILL_ANAESTHETIC],c.[BILL_MINOR_SURGICAL],c.[BILL_OPD_ACCIDENT],c.[BILL_X_RAYS_LAB]
-,c.[BILL_AMBULANCE],c.[BILL_DOCTOR_VISIT],c.[BILL_OTHER],c.[HS_FOR_ICU],c.[ROOM_BROAD],c.[PHARMA],c.[MIS_EXPEND],c.[SURGICAL]
-,c.[OPERATION_ROOM],c.[ANAESTHETIC],c.[MINOR_SURGICAL],c.[OPD_ACCIDENT],c.[X_RAYS_LAB],c.[AMBULANCE],c.[DOCTOR_VISIT],c.[OTHER],c.[EXTRACT_USER],c.[EXTRACT_YY],c.[EXTRACT_MM],c.[EXTRACT_DD],c.[EXTRACT_TIME],c.[Group_NON_Group]
-from Claim_Mort2 as c left join Prophet_Table_Fixed as t on(c.filename = t.Filename)
 
-go
+CREATE VIEW CLAIM_MORT3 AS
+
+SELECT CASE WHEN T.LAST_FILENAME IS NOT NULL THEN T.LAST_FILENAME
+	        ELSE C.[FILENAME] END AS [FILENAME],C.[ORIG_PACK_CODE]
+,C.[SPCODE],C.[M_PORT_TYPE],C.[M_MASTER_POLICY],C.[M_CERNO_POLNO],C.[M_PLAN_COMPONENT],C.[M_PLAN_COMPONENT_02],C.[M_PACKAGE_CODE],C.[M_SUB_CHANNEL],C.[M_SUB_OFFICE]
+,C.[M_DEPENDENT_CODE],C.[SYSTEM_NAME],C.[RUNNING],C.[PRODUCT_TYPE],C.[CONTRACT_NO],C.[MASTER_POLICY],C.[CERTIFICATE_NO],C.[GYRT_GRP_TYPE],C.[GYRT_GRP_POL],C.[GYRT_SUB_OFF],C.[GYRT_GR_CER]
+,C.[GYRT_DEP_COD],C.[INSURED_ID],C.[OCCUPATION_CODE],C.[CLAIM_YEAR],C.[CLM_NOTICE_NO],C.[ALT_CLAIM_TYPE],C.[ALT_CLAIM_YEAR],C.[ALT_CLAIM_NOTICE]
+,C.[ALT_CLAIM_STS],C.[POLICY_STS],C.[CLAIM_STS],C.[CLAIM_STS_DESC],C.[CLAIM_TYPE_CODE],C.[CLAIM_TYPE],C.[PACKAGE_CODE],C.[PACKAGE_DESC],C.[RIDER_CODE]
+,C.[RIDER_NAME],C.[DOI_DATE],C.[EFFECTIVE_DATE],C.[FST_ISSUE_DATE],C.[ISSUE_DATE],C.[EXPIRE_DATE],C.[DOC_RCV_DATE],C.[NOTICE_DATE],C.[CLM_APV_DATE],C.[CLM_PAYMENT_DATE]
+,C.[CLAIM_INC_DATE],C.[CAUSE_OF_DTH_CODE],C.[DIAGNOSIS],C.[CAUSE_DESC],C.[CAUSE_OF_NUL_CODE],C.[NULLIFY_DESC],C.[IPD_OPD],C.[HOSPITAL]
+,C.[ADMISSION_DATE],C.[DISCHARGE_DATE],C.[LEN_OF_STAY],C.[CURR],C.[TOTAL_CLM_AMT],C.[ACTUAL_CLM_AMT],C.[POL_UNPAID_PREMIUM],C.[POL_UNPAID_LOAN],C.[POL_UNPAID_LOAN_INT]
+,C.[DEPOSIT_COND_BONUS],C.[PAID_SUM_INSURED],C.[CASH_VALUE],C.[PREMIUM_PAID],C.[CLM_PMT_MTD],C.[CLM_PMT_MTD_DESC],C.[BANK_CODE],C.[ACCOUNT_NO],C.[AGENT_CODE],C.[AGENT_NAME],C.[SVC_AGENT_CODE],C.[SVC_AGENT_NAME],C.[CHANNEL_CODE],C.[SUB_CHANNEL_CODE],C.[OWNER_NATIONAL_ID],C.[OWNER_NAME],C.[PAYEE_NAME],C.[LIFE_NO],C.[LIFE_NAME],C.[DATE_OF_BIRTH],C.[APPROVE_NAME]
+,C.[GUSER],C.[GRUNDT],C.[GRUNTM],C.[PPO_FLAG],C.[BNF_CODE],C.[CLAIM_ID],C.[CLAIM_REG_ID],C.[CLAIM_ISS_AGE]
+,IIF(C.[CLAIM_GENDER] ='M',0,1) AS [CLAIM_GENDER],C.[SUM_INSURED],C.[HS_BILL_FOR_ICU],C.[BILL_ROOM_BROAD],C.[BILL_PHARMA],C.[BILL_MIS_EXPEND]
+,C.[BILL_SURGICAL],C.[BILL_OPERATION_ROOM],C.[BILL_ANAESTHETIC],C.[BILL_MINOR_SURGICAL],C.[BILL_OPD_ACCIDENT],C.[BILL_X_RAYS_LAB]
+,C.[BILL_AMBULANCE],C.[BILL_DOCTOR_VISIT],C.[BILL_OTHER],C.[HS_FOR_ICU],C.[ROOM_BROAD],C.[PHARMA],C.[MIS_EXPEND],C.[SURGICAL]
+,C.[OPERATION_ROOM],C.[ANAESTHETIC],C.[MINOR_SURGICAL],C.[OPD_ACCIDENT],C.[X_RAYS_LAB],C.[AMBULANCE],C.[DOCTOR_VISIT],C.[OTHER],C.[EXTRACT_USER],C.[EXTRACT_YY],C.[EXTRACT_MM],C.[EXTRACT_DD],C.[EXTRACT_TIME],C.[GROUP_NON_GROUP]
+FROM CLAIM_MORT2 AS C LEFT JOIN PROPHET_TABLE_FIXED AS T ON(C.FILENAME = T.FILENAME)
+
+GO
 
 
 --===================================================================================================================================================================================
 
 
---================================ Run the result here =================================
+--================================ RUN THE RESULT HERE =================================
 -- 5902876
------- Revised the coding for calculate the block of IF 
+------ REVISED THE CODING FOR CALCULATE THE BLOCK OF IF 
 
-create view [Prophet_Mort] as
+CREATE VIEW [PROPHET_MORT] AS
 
-select t.[Product] as [Product_PLan],iif( o.[FILENAME] in('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') ,k.PLAN_COMPONENT,NULL) as [Plan_Code_ETIRPU],t.[Channel],t.[Sub_Channel Name],t.port,
-CASE WHEN  o.[FILENAME] = 'C_ETI_' THEN 'Basic'
-	 WHEN  o.[FILENAME] = 'C_ETIL' THEN 'Basic'
-	 WHEN  o.[FILENAME] = 'CTETI_' THEN 'Basic'
-	 WHEN  o.[FILENAME] = 'C_PUP_' THEN 'Basic'
-	 WHEN  o.[FILENAME] = 'C_PUPL' THEN 'Basic'
-	 WHEN  o.[FILENAME] = 'CTPU__' THEN 'Basic' else t.[Type] end as [Type]
-,t.[Description],t.[Product_Type], 
+SELECT T.[PRODUCT] AS [PRODUCT_PLAN],IIF( O.[FILENAME] IN('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') ,K.PLAN_COMPONENT,NULL) AS [PLAN_CODE_ETIRPU],T.[CHANNEL],T.[SUB_CHANNEL NAME],T.PORT,
+CASE WHEN  O.[FILENAME] = 'C_ETI_' THEN 'BASIC'
+	 WHEN  O.[FILENAME] = 'C_ETIL' THEN 'BASIC'
+	 WHEN  O.[FILENAME] = 'CTETI_' THEN 'BASIC'
+	 WHEN  O.[FILENAME] = 'C_PUP_' THEN 'BASIC'
+	 WHEN  O.[FILENAME] = 'C_PUPL' THEN 'BASIC'
+	 WHEN  O.[FILENAME] = 'CTPU__' THEN 'BASIC' ELSE T.[TYPE] END AS [TYPE]
+,T.[DESCRIPTION],T.[PRODUCT_TYPE], 
 
-----iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Pre_result', 0 ,iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Cur_result'  ,m.[q_x+0],m.[q_x+0])) as [q_x+0],
-m.[q_x+0],
+----IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'PRE_RESULT', 0 ,IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'CUR_RESULT'  ,M.[Q_X+0],M.[Q_X+0])) AS [Q_X+0],
+M.[Q_X+0],
 
-----iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Pre_result', 0 ,iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Cur_result'  ,1,0.5)) as [Exposure_Case],
-0.5 as [Exposure_Case],
-
-
-----iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Pre_result', 0 ,iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Cur_result'  ,1*o.DEATH_BEN_PP ,0.5*o.DEATH_BEN_PP )) as [Exposure_SA],
-o.DEATH_BEN_PP /2 as [Exposure_SA],
-
-----iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Pre_result', 0 ,iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Cur_result'  ,1*m.[q_x+0] ,0.5*m.[q_x+0] )) as [Ex_Case],
-m.[q_x+0]*1/2 as [Ex_Case],
-
-----iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Pre_result', 0 ,iif(ENTRY_YEAR <=2016 and Reslt_Date = 'Cur_result'  ,1*m.[q_x+0]*o.DEATH_BEN_PP ,0.5*m.[q_x+0]*o.DEATH_BEN_PP )) as [Ex_SA],
-m.[q_x+0]*o.DEATH_BEN_PP/2 as [Ex_SA],
+----IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'PRE_RESULT', 0 ,IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'CUR_RESULT'  ,1,0.5)) AS [EXPOSURE_CASE],
+0.5 AS [EXPOSURE_CASE],
 
 
-o.*
-from [Prophet_Merge_All] as o left join ( select Product,[FILENAME],[SPCODE],[Channel],[Sub_Channel Name],[Type],[Description],[Product_Type]
-      ,[Port]
+----IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'PRE_RESULT', 0 ,IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'CUR_RESULT'  ,1*O.DEATH_BEN_PP ,0.5*O.DEATH_BEN_PP )) AS [EXPOSURE_SA],
+O.DEATH_BEN_PP /2 AS [EXPOSURE_SA],
+
+----IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'PRE_RESULT', 0 ,IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'CUR_RESULT'  ,1*M.[Q_X+0] ,0.5*M.[Q_X+0] )) AS [EX_CASE],
+M.[Q_X+0]*1/2 AS [EX_CASE],
+
+----IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'PRE_RESULT', 0 ,IIF(ENTRY_YEAR <=2016 AND RESLT_DATE = 'CUR_RESULT'  ,1*M.[Q_X+0]*O.DEATH_BEN_PP ,0.5*M.[Q_X+0]*O.DEATH_BEN_PP )) AS [EX_SA],
+M.[Q_X+0]*O.DEATH_BEN_PP/2 AS [EX_SA],
+
+
+O.*
+FROM [PROPHET_MERGE_ALL] AS O LEFT JOIN ( SELECT PRODUCT,[FILENAME],[SPCODE],[CHANNEL],[SUB_CHANNEL NAME],[TYPE],[DESCRIPTION],[PRODUCT_TYPE]
+      ,[PORT]
       
-from [Prophet_Table_New] 
+FROM [PROPHET_TABLE_NEW] 
 
---where SPCODE is not null  
-
-
-group by Product,[FILENAME],[SPCODE],[Channel],[Sub_Channel Name],[Type],[Description],[Product_Type],[Port]
-       )as t on( o.[filename] = t.[filename]
---and  iif( t.[FILENAME] ='CTGE__',1,o.SPCODE) = t.SPCODE  ) 
-and  case when t.[FILENAME] ='CTGE__' then 1 
-		  WHEN  o.[FILENAME] = 'C_ETI_' THEN 1
-	      WHEN  o.[FILENAME] = 'C_ETIL' THEN 1
-	      WHEN  o.[FILENAME] = 'CTETI_' THEN 1
-	      WHEN  o.[FILENAME] = 'C_PUP_' THEN 1
-	      WHEN  o.[FILENAME] = 'C_PUPL' THEN 1
-	      WHEN  o.[FILENAME] = 'CTPU__' THEN 1 else o.SPCODE end = 
-CASE  WHEN  t.[FILENAME] = 'C_ETI_' THEN 1
-	      WHEN  t.[FILENAME] = 'C_ETIL' THEN 1
-	      WHEN  t.[FILENAME] = 'CTETI_' THEN 1
-	      WHEN  t.[FILENAME] = 'C_PUP_' THEN 1
-	      WHEN  t.[FILENAME] = 'C_PUPL' THEN 1
-	      WHEN  t.[FILENAME] = 'CTPU__' THEN 1 else t.SPCODE end )
-left join [Mort_Table] as m on( o.Sex = m.[Sex_Num] and o.AGE_AT_ENTRY+o.POLICY_YEAR = m.[Age_x]  )
-left join (select * from Map_Data where Port_Type like'Trad%' and PLAN_SEQ = 1) as k on(o.POL_NUMBER = k.CERNO_POLNO and o.PACKAGE_CODE = k.PACKAGE_CODE)
+--WHERE SPCODE IS NOT NULL  
 
 
-go
+GROUP BY PRODUCT
+	,[FILENAME]
+	,[SPCODE]
+	,[CHANNEL]
+	,[SUB_CHANNEL NAME]
+	,[TYPE]
+	,[DESCRIPTION]
+	,[PRODUCT_TYPE]
+	,[PORT]
+       )	AS T ON
+	   ( O.[FILENAME] = T.[FILENAME]
+--AND  IIF( T.[FILENAME] ='CTGE__',1,O.SPCODE) = T.SPCODE  ) 
+	AND  CASE WHEN T.[FILENAME] ='CTGE__' THEN 1 
+		  WHEN  O.[FILENAME] = 'C_ETI_' THEN 1
+	      WHEN  O.[FILENAME] = 'C_ETIL' THEN 1
+	      WHEN  O.[FILENAME] = 'CTETI_' THEN 1
+	      WHEN  O.[FILENAME] = 'C_PUP_' THEN 1
+	      WHEN  O.[FILENAME] = 'C_PUPL' THEN 1
+	      WHEN  O.[FILENAME] = 'CTPU__' THEN 1 ELSE O.SPCODE END 
+		  = 
+		CASE  WHEN  T.[FILENAME] = 'C_ETI_' THEN 1
+	      WHEN  T.[FILENAME] = 'C_ETIL' THEN 1
+	      WHEN  T.[FILENAME] = 'CTETI_' THEN 1
+	      WHEN  T.[FILENAME] = 'C_PUP_' THEN 1
+	      WHEN  T.[FILENAME] = 'C_PUPL' THEN 1
+	      WHEN  T.[FILENAME] = 'CTPU__' THEN 1 ELSE T.SPCODE END 
+		  )
+LEFT JOIN [MORT_TABLE] AS M ON( O.SEX = M.[SEX_NUM] AND O.AGE_AT_ENTRY+O.POLICY_YEAR = M.[AGE_X]  )  -- ********************
+LEFT JOIN (SELECT * FROM MAP_DATA WHERE PORT_TYPE LIKE'TRAD%' AND PLAN_SEQ = 1) AS K ON(O.POL_NUMBER = K.CERNO_POLNO AND O.PACKAGE_CODE = K.PACKAGE_CODE)
 
 
--- Checking
--- old + new = 5902876
----- Here!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
---====== Making Claim with Prophet_Result ======
+GO
 
 
-create view Prophet_Mort_2 as
+-- CHECKING
+-- OLD + NEW = 5902876
+---- HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-select c.CLAIM_TYPE,iif(c.CLAIM_TYPE is null,null,0.5) as [Exposure_Case_Claim],0.5*c.ACTUAL_CLM_AMT as [Exposure_SA_Claim],m.[q_x+0]*0.5 as [Ex_Case_Claim],m.[q_x+0]*c.ACTUAL_CLM_AMT/2 as [Ex_SA_Claim],
-m.*,
-c.CLAIM_STS_DESC,c.CLAIM_TYPE_CODE,c.PACKAGE_DESC,c.RIDER_CODE,c.RIDER_NAME,c.DOI_DATE,c.EFFECTIVE_DATE,c.FST_ISSUE_DATE,c.ISSUE_DATE,c.EXPIRE_DATE,c.DOC_RCV_DATE,c.NOTICE_DATE,c.CLM_APV_DATE,c.CLM_PAYMENT_DATE,c.CLAIM_INC_DATE,c.CAUSE_OF_DTH_CODE,c.DIAGNOSIS,c.CAUSE_DESC,c.CAUSE_OF_NUL_CODE,c.NULLIFY_DESC,c.IPD_OPD,c.HOSPITAL,c.ADMISSION_DATE,c.DISCHARGE_DATE,c.LEN_OF_STAY,c.CURR,c.TOTAL_CLM_AMT,c.ACTUAL_CLM_AMT,
-c.POL_UNPAID_PREMIUM,c.POL_UNPAID_LOAN,c.POL_UNPAID_LOAN_INT,c.DEPOSIT_COND_BONUS,c.PAID_SUM_INSURED,c.CASH_VALUE,c.PREMIUM_PAID,c.CLM_PMT_MTD,c.CLM_PMT_MTD_DESC,c.BANK_CODE,c.ACCOUNT_NO,c.AGENT_CODE,c.SUM_INSURED as [Sum_Insured_Claim]
-
-from Prophet_Mort as m left join Claim_Mort3 as c on( m.Reslt_Date ='Pre_result' and
-iif(m.[FILENAME] in('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') ,m.PACKAGE_CODE,m.[FILENAME]) = iif( m.[FILENAME] in('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') ,c.M_PACKAGE_CODE,c.[FILENAME] )
-and iif(m.[FILENAME] in('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') ,'',m.SPCODE) =  iif(m.[FILENAME] in('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') ,'',c.SPCODE )
-and m.POL_NUMBER = c.M_Cerno_polno
-and iif(m.PLAN_CODE_ETIRPU is not null,m.PLAN_CODE_ETIRPU,'') =iif(m.PLAN_CODE_ETIRPU is not null,c.[M_PLAN_COMPONENT],'') 
-
-and iif(c.M_Port_Type ='GYRT',m.PACKAGE_CODE,'') = iif(c.M_Port_Type ='GYRT', c.orig_Pack_code   /*c.M_Master_Policy*/,'')
-----and iif(c.M_Port_Type ='GYRT',m.DIST,'') = iif(c.M_Port_Type ='GYRT',c.[M_SUB_CHANNEL],'')
-
-and iif(m.Product_PLAN ='G' and c.[PRODUCT_TYPE] ='GM',c.[ORIG_PACK_CODE],'') = iif(m.Product_PLAN ='G'  and c.[PRODUCT_TYPE] ='GM',m.Package_code,'')
-
----- Add Sub office for GYRT
-AND iif( c.[PRODUCT_TYPE] ='GR',m.Product,'' ) = iif( c.[PRODUCT_TYPE] ='GR',cast(c.M_SUB_OFFICE as nvarchar) + cast(c.M_DEpendent_Code as nvarchar),'' )
-
-and iif( c.[PRODUCT_TYPE] ='GR','',m.SEX) = iif( c.[PRODUCT_TYPE] ='GR','',c.CLAIM_GENDER) )
+--====== MAKING CLAIM WITH PROPHET_RESULT ======
 
 
+CREATE VIEW PROPHET_MORT_2 AS
 
-go
+SELECT C.CLAIM_TYPE
+	,IIF(C.CLAIM_TYPE IS NULL,NULL,0.5) AS [EXPOSURE_CASE_CLAIM]
+	,0.5*C.ACTUAL_CLM_AMT AS [EXPOSURE_SA_CLAIM]
+	,M.[Q_X+0]*0.5 AS [EX_CASE_CLAIM]
+	,M.[Q_X+0]*C.ACTUAL_CLM_AMT/2 AS [EX_SA_CLAIM]
+	,M.*
+	,C.CLAIM_STS_DESC
+	,C.CLAIM_TYPE_CODE
+	,C.PACKAGE_DESC
+	,C.RIDER_CODE
+	,C.RIDER_NAME
+	,C.DOI_DATE
+	,C.EFFECTIVE_DATE
+	,C.FST_ISSUE_DATE
+	,C.ISSUE_DATE
+	,C.EXPIRE_DATE
+	,C.DOC_RCV_DATE
+	,C.NOTICE_DATE
+	,C.CLM_APV_DATE
+	,C.CLM_PAYMENT_DATE
+	,C.CLAIM_INC_DATE
+	,C.CAUSE_OF_DTH_CODE
+	,C.DIAGNOSIS
+	,C.CAUSE_DESC
+	,C.CAUSE_OF_NUL_CODE
+	,C.NULLIFY_DESC
+	,C.IPD_OPD
+	,C.HOSPITAL
+	,C.ADMISSION_DATE
+	,C.DISCHARGE_DATE
+	,C.LEN_OF_STAY
+	,C.CURR
+	,C.TOTAL_CLM_AMT
+	,C.ACTUAL_CLM_AMT
+	,C.POL_UNPAID_PREMIUM
+	,C.POL_UNPAID_LOAN
+	,C.POL_UNPAID_LOAN_INT
+	,C.DEPOSIT_COND_BONUS
+	,C.PAID_SUM_INSURED
+	,C.CASH_VALUE
+	,C.PREMIUM_PAID
+	,C.CLM_PMT_MTD
+	,C.CLM_PMT_MTD_DESC
+	,C.BANK_CODE
+	,C.ACCOUNT_NO
+	,C.AGENT_CODE
+	,C.SUM_INSURED AS [SUM_INSURED_CLAIM]
+FROM PROPHET_MORT AS M 
+LEFT JOIN CLAIM_MORT3 AS C ON 
+	(M.RESLT_DATE ='PRE_RESULT' 
+		AND 
+			IIF(M.[FILENAME] IN ('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
+			,M.PACKAGE_CODE
+			,M.[FILENAME]) 
+			= 
+			IIF( M.[FILENAME] IN('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') 
+			,C.M_PACKAGE_CODE
+			,C.[FILENAME])
+		AND 
+			IIF(M.[FILENAME] IN('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') 
+			,''
+			,M.SPCODE) 
+			=  
+			IIF(M.[FILENAME] IN('C_ETI_','C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__') 
+			,''
+			,C.SPCODE)
+	AND M.POL_NUMBER = C.M_CERNO_POLNO
+	AND 
+		IIF(M.PLAN_CODE_ETIRPU IS NOT NULL
+		,M.PLAN_CODE_ETIRPU
+		,'') 
+		=
+		IIF(M.PLAN_CODE_ETIRPU IS NOT NULL
+		,C.[M_PLAN_COMPONENT]
+		,'') 
+	AND 
+		IIF(C.M_PORT_TYPE ='GYRT'
+		,M.PACKAGE_CODE
+		,'') 
+		= 
+		IIF(C.M_PORT_TYPE ='GYRT'
+		, C.ORIG_PACK_CODE   /*C.M_MASTER_POLICY*/
+		,'')
+----AND IIF(C.M_PORT_TYPE ='GYRT',M.DIST,'') = IIF(C.M_PORT_TYPE ='GYRT',C.[M_SUB_CHANNEL],'')
+
+	AND 
+		IIF(M.PRODUCT_PLAN ='G' AND C.[PRODUCT_TYPE] ='GM'
+		,C.[ORIG_PACK_CODE]
+		,'') 
+		= 
+		IIF(M.PRODUCT_PLAN ='G'  AND C.[PRODUCT_TYPE] ='GM'
+		,M.PACKAGE_CODE
+		,'')
+
+---- ADD SUB OFFICE FOR GYRT
+	AND 
+		IIF( C.[PRODUCT_TYPE] ='GR'
+		,M.PRODUCT
+		,'' ) 
+		= 
+		IIF( C.[PRODUCT_TYPE] ='GR'
+		,CAST(C.M_SUB_OFFICE AS NVARCHAR) + CAST(C.M_DEPENDENT_CODE AS NVARCHAR)
+		,'' )
+
+	AND 
+		IIF( C.[PRODUCT_TYPE] ='GR'
+		,''
+		,M.SEX) 
+		= 
+		IIF( C.[PRODUCT_TYPE] ='GR'
+		,''
+		,C.CLAIM_GENDER) 
+	)
+
+
+GO
 
 
 
---create view Prophet_Mort_3 as
+--CREATE VIEW PROPHET_MORT_3 AS
 
---select *
---from Prophet_Mort_2
---where claim_Type is not null
+--SELECT *
+--FROM PROPHET_MORT_2
+--WHERE CLAIM_TYPE IS NOT NULL
 
---go
+--GO
 
 
 --===================================================================================================================================================================================
@@ -307,74 +481,116 @@ go
 
 
 --=============================================================================================================================================================
---  Result
+--  RESULT
 
 
 
--- Result!!!!!!!!!!!
+-- RESULT!!!!!!!!!!!
 
 
-----Create view Mortality_Result as
+----CREATE VIEW MORTALITY_RESULT AS
 
-----select  Reslt_Date, [Product_Plan],Port,[Type],CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
+----SELECT  RESLT_DATE, [PRODUCT_PLAN],PORT,[TYPE],CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
 ----	 WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
 ----	 WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
 ----	 WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
 ----	 WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
-----	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE Product_Type end as [Product_Type], count(*) as [Num], sum(Exposure_Case) as [Exposure_Case], sum(Exposure_SA) as [Exposure_SA], sum(Ex_Case) as [Expected_Case], sum(Ex_SA) as [Expected_SA],
-----Channel,[Sub_Channel Name],[Description],ENTRY_YEAR,Prem_Freq,iif(Sex = 0,'Male','Female') as [Sex],[Filename],AGE_AT_ENTRY,POL_TERM_Y,POLICY_YEAR,sum(ANNUAL_PREM) as [ANNUAL_PREM]
-----,sum(SUM_ASSURED) as [SUM_ASSURED],sum(DEATH_BEN_PP) as [DEATH_BEN]
-----from Prophet_Mort 
-----where Product_Type not in('Rider - ACC','Rider - HI','Rider - HS','Rider - CI','Rider - RCC','Rider - TPD','Rider - WP')
-------where    iif( Product ='IL' and [Type] ='Rider' and (Product_Type !='Rider - Term' or Product_Type != 'Rider PE'),'0','1' ) = '1'      ----  Cut OL rider
-----group by CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
+----	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE PRODUCT_TYPE END AS [PRODUCT_TYPE], COUNT(*) AS [NUM], SUM(EXPOSURE_CASE) AS [EXPOSURE_CASE], SUM(EXPOSURE_SA) AS [EXPOSURE_SA], SUM(EX_CASE) AS [EXPECTED_CASE], SUM(EX_SA) AS [EXPECTED_SA],
+----CHANNEL,[SUB_CHANNEL NAME],[DESCRIPTION],ENTRY_YEAR,PREM_FREQ,IIF(SEX = 0,'MALE','FEMALE') AS [SEX],[FILENAME],AGE_AT_ENTRY,POL_TERM_Y,POLICY_YEAR,SUM(ANNUAL_PREM) AS [ANNUAL_PREM]
+----,SUM(SUM_ASSURED) AS [SUM_ASSURED],SUM(DEATH_BEN_PP) AS [DEATH_BEN]
+----FROM PROPHET_MORT 
+----WHERE PRODUCT_TYPE NOT IN('RIDER - ACC','RIDER - HI','RIDER - HS','RIDER - CI','RIDER - RCC','RIDER - TPD','RIDER - WP')
+------WHERE    IIF( PRODUCT ='IL' AND [TYPE] ='RIDER' AND (PRODUCT_TYPE !='RIDER - TERM' OR PRODUCT_TYPE != 'RIDER PE'),'0','1' ) = '1'      ----  CUT OL RIDER
+----GROUP BY CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
 ----	 WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
 ----	 WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
 ----	 WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
 ----	 WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
-----	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE Product_Type end,Reslt_Date , [Product_Plan],Port,[Type],Channel,[Sub_Channel Name],[Description],ENTRY_YEAR,Prem_Freq,Sex,[Filename],AGE_AT_ENTRY,POL_TERM_Y,POLICY_YEAR
+----	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE PRODUCT_TYPE END,RESLT_DATE , [PRODUCT_PLAN],PORT,[TYPE],CHANNEL,[SUB_CHANNEL NAME],[DESCRIPTION],ENTRY_YEAR,PREM_FREQ,SEX,[FILENAME],AGE_AT_ENTRY,POL_TERM_Y,POLICY_YEAR
 ----	 --,SUM_ASSURED,DEATH_BEN_PP
-------order by Reslt_Date
+------ORDER BY RESLT_DATE
 
-----go
+----GO
 
 
 
-Create view _Mortality_Result as
+CREATE VIEW _MORTALITY_RESULT AS
 
-select  Reslt_Date, [Product_Plan],Port,[Type],CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
-	 WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
-	 WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
-	 WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
-	 WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
-	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE Product_Type end as [Product_Type], count(*) as [Num], sum(Exposure_Case) as [Exposure_Case], sum(Exposure_SA) as [Exposure_SA], sum(Ex_Case) as [Expected_Case], sum(Ex_SA) as [Expected_SA],
-Channel,[Sub_Channel Name],[Description],ENTRY_YEAR,Prem_Freq,iif(Sex = 0,'Male','Female') as [Sex],[Filename],AGE_AT_ENTRY,POL_TERM_Y,POLICY_YEAR,sum(ANNUAL_PREM) as [ANNUAL_PREM]
-,sum(SUM_ASSURED) as [SUM_ASSURED],sum(DEATH_BEN_PP) as [DEATH_BEN],sum([Exposure_Case_Claim]) as [Exposure_Case_Claim],sum([Exposure_SA_Claim]) as [Exposure_SA_Claim],sum(Ex_Case_Claim) as [Ex_Case_Claim],sum([Ex_SA_Claim]) as [Ex_SA_Claim],
-sum(Exposure_Case)+sum([Exposure_Case_Claim]) as [Total_Exposure_Case],
-sum(Exposure_SA) +sum([Exposure_SA_Claim]) as [Total_Exposure_SA],
-sum(Ex_Case)+sum(Ex_Case_Claim) as [Total_Ex_Case],
-sum(Ex_SA) +sum([Ex_SA_Claim]) as [Total_Ex_SA]
-from Prophet_Mort_2 
-where Product_Type not in('Rider - ACC','Rider - HI','Rider - HS','Rider - CI','Rider - RCC','Rider - TPD','Rider - WP')
---where    iif( Product ='IL' and [Type] ='Rider' and (Product_Type !='Rider - Term' or Product_Type != 'Rider PE'),'0','1' ) = '1'      ----  Cut OL rider
-group by CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
-	 WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
-	 WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
-	 WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
-	 WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
-	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE Product_Type end,Reslt_Date , [Product_Plan],Port,[Type],Channel,[Sub_Channel Name],[Description],ENTRY_YEAR,Prem_Freq,Sex,[Filename],AGE_AT_ENTRY,POL_TERM_Y,POLICY_YEAR
+SELECT  RESLT_DATE
+	, [PRODUCT_PLAN]
+	,PORT
+	,[TYPE]
+	,CASE 
+	WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
+	WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
+	WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
+	WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
+	WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
+	WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' 
+	ELSE PRODUCT_TYPE 
+	END							AS [PRODUCT_TYPE]
+	, COUNT(*) AS [NUM]
+	, SUM(EXPOSURE_CASE)		AS [EXPOSURE_CASE]
+	, SUM(EXPOSURE_SA)			AS [EXPOSURE_SA]
+	, SUM(EX_CASE)				AS [EXPECTED_CASE]
+	, SUM(EX_SA)				AS [EXPECTED_SA]
+	, CHANNEL
+	,[SUB_CHANNEL NAME]
+	,[DESCRIPTION]
+	,ENTRY_YEAR
+	,PREM_FREQ
+	,IIF(SEX = 0,'MALE','FEMALE')		AS [SEX]
+	,[FILENAME]
+	,AGE_AT_ENTRY
+	,POL_TERM_Y
+	,POLICY_YEAR
+	,SUM(ANNUAL_PREM)			AS [ANNUAL_PREM]
+	,SUM(SUM_ASSURED)			AS [SUM_ASSURED]
+	,SUM(DEATH_BEN_PP)			AS [DEATH_BEN]
+	,SUM([EXPOSURE_CASE_CLAIM]) AS [EXPOSURE_CASE_CLAIM]
+	,SUM([EXPOSURE_SA_CLAIM])	AS [EXPOSURE_SA_CLAIM]
+	,SUM(EX_CASE_CLAIM)			AS [EX_CASE_CLAIM]
+	,SUM([EX_SA_CLAIM])			AS [EX_SA_CLAIM]
+	,SUM(EXPOSURE_CASE)+SUM([EXPOSURE_CASE_CLAIM])		AS [TOTAL_EXPOSURE_CASE]
+	,SUM(EXPOSURE_SA) +SUM([EXPOSURE_SA_CLAIM])			AS [TOTAL_EXPOSURE_SA]
+	,SUM(EX_CASE)+SUM(EX_CASE_CLAIM)		AS [TOTAL_EX_CASE]
+	,SUM(EX_SA) +SUM([EX_SA_CLAIM])			AS [TOTAL_EX_SA]
+FROM PROPHET_MORT_2 
+WHERE PRODUCT_TYPE NOT IN('RIDER - ACC','RIDER - HI','RIDER - HS','RIDER - CI','RIDER - RCC','RIDER - TPD','RIDER - WP')
+--WHERE    IIF( PRODUCT ='IL' AND [TYPE] ='RIDER' AND (PRODUCT_TYPE !='RIDER - TERM' OR PRODUCT_TYPE != 'RIDER PE'),'0','1' ) = '1'      ----  CUT OL RIDER
+GROUP BY CASE 
+	WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
+	WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
+	WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
+	WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
+	WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
+	WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' 
+	ELSE PRODUCT_TYPE 
+	END
+	,RESLT_DATE 
+	,[PRODUCT_PLAN]
+	,PORT
+	,[TYPE]
+	,CHANNEL
+	,[SUB_CHANNEL NAME]
+	,[DESCRIPTION]
+	,ENTRY_YEAR
+	,PREM_FREQ
+	,SEX
+	,[FILENAME]
+	,AGE_AT_ENTRY
+	,POL_TERM_Y
+	,POLICY_YEAR
 	 --,SUM_ASSURED,DEATH_BEN_PP
---order by Reslt_Date
+--ORDER BY RESLT_DATE
 
-go
-
-
----------------------------------- Making Table ----------------------------------
-
-select * into Mortality_Result
-from _Mortality_Result
+GO
 
 
+---------------------------------- MAKING TABLE ----------------------------------
+
+SELECT * INTO MORTALITY_RESULT
+FROM _MORTALITY_RESULT
 
 
 
@@ -400,44 +616,46 @@ from _Mortality_Result
 
 
 
---============================================================== Back Up Old Result ===========================================================================
+
+
+--============================================================== BACK UP OLD RESULT ===========================================================================
 --=============================================================================================================================================================
 
----- Result First
-----select Group_Type1,POLICY_YEAR,iif(Sex = 0,'M','F') as [Gender],count(*) as [Policy_No],sum(Exposure_Case) as [Sum_Expo_C],sum(Exposure_SA) as [Sum_Expo_SA],sum(Ex_Case) as [Sum_EX_C],sum(Ex_SA) as [Sum_EX_SA]
-----from Prophet_Mort
-----where [Type] ='Basic'
-----group by Group_Type1,POLICY_YEAR,iif(Sex = 0,'M','F')
-----order by Group_Type1,POLICY_YEAR,iif(Sex = 0,'M','F')
+---- RESULT FIRST
+----SELECT GROUP_TYPE1,POLICY_YEAR,IIF(SEX = 0,'M','F') AS [GENDER],COUNT(*) AS [POLICY_NO],SUM(EXPOSURE_CASE) AS [SUM_EXPO_C],SUM(EXPOSURE_SA) AS [SUM_EXPO_SA],SUM(EX_CASE) AS [SUM_EX_C],SUM(EX_SA) AS [SUM_EX_SA]
+----FROM PROPHET_MORT
+----WHERE [TYPE] ='BASIC'
+----GROUP BY GROUP_TYPE1,POLICY_YEAR,IIF(SEX = 0,'M','F')
+----ORDER BY GROUP_TYPE1,POLICY_YEAR,IIF(SEX = 0,'M','F')
 
 
 
---select CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
+--SELECT CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
 --	 WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
 --	 WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
 --	 WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
 --	 WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
 --	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU'
---ELSE  [Group_Type1] END as [Group_Type1],POLICY_YEAR,iif(Sex = 0,'M','F') as [Gender],count(*) as [Policy_No],sum(Exposure_Case) as [Sum_Expo_C],sum(Exposure_SA) as [Sum_Expo_SA],sum(Ex_Case) as [Sum_EX_C],sum(Ex_SA) as [Sum_EX_SA]
---from Prophet_Mort
---where iif([Type] = 'RIDER' and Group_Type1 ='TS','Basic',[Type]) ='Basic'
---group by CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
+--ELSE  [GROUP_TYPE1] END AS [GROUP_TYPE1],POLICY_YEAR,IIF(SEX = 0,'M','F') AS [GENDER],COUNT(*) AS [POLICY_NO],SUM(EXPOSURE_CASE) AS [SUM_EXPO_C],SUM(EXPOSURE_SA) AS [SUM_EXPO_SA],SUM(EX_CASE) AS [SUM_EX_C],SUM(EX_SA) AS [SUM_EX_SA]
+--FROM PROPHET_MORT
+--WHERE IIF([TYPE] = 'RIDER' AND GROUP_TYPE1 ='TS','BASIC',[TYPE]) ='BASIC'
+--GROUP BY CASE WHEN  [FILENAME] = 'C_ETI_' THEN 'ETI'
 --	 WHEN  [FILENAME] = 'C_ETIL' THEN 'ETI'
 --	 WHEN  [FILENAME] = 'CTETI_' THEN 'ETI'
 --	 WHEN  [FILENAME] = 'C_PUP_' THEN 'RPU'
 --	 WHEN  [FILENAME] = 'C_PUPL' THEN 'RPU'
---	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE  [Group_Type1] END  ,POLICY_YEAR,iif(Sex = 0,'M','F')
+--	 WHEN  [FILENAME] = 'CTPU__' THEN 'RPU' ELSE  [GROUP_TYPE1] END  ,POLICY_YEAR,IIF(SEX = 0,'M','F')
 
 
 
 
 ---- FOR ETI&RPU
 
---select t.[filename],t.Group_Type1,o.[PLAN_COMPONENT],o.[Sub_Channel],m.*
---from Prophet_Mort as m left join (select CERNO_POLNO,PLAN_COMPONENT,PACKAGE_CODE,sub_channel from Data_ETIRPU ) as o on(/*m.PACKAGE_CODE = o.PACKAGE_CODE and*/ m.POL_NUMBER = o.CERNO_POLNO )
---left join Prophet_Table as t on(o.PACKAGE_CODE = t.PACKAGE_CODE and t.PLAN_COMPONENT = o.plan_Component and t.SUB_CHANNEL = o.sub_Channel)
---where m.[FILENAME] In( 'C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
---and t.group_Type1 is null
+--SELECT T.[FILENAME],T.GROUP_TYPE1,O.[PLAN_COMPONENT],O.[SUB_CHANNEL],M.*
+--FROM PROPHET_MORT AS M LEFT JOIN (SELECT CERNO_POLNO,PLAN_COMPONENT,PACKAGE_CODE,SUB_CHANNEL FROM DATA_ETIRPU ) AS O ON(/*M.PACKAGE_CODE = O.PACKAGE_CODE AND*/ M.POL_NUMBER = O.CERNO_POLNO )
+--LEFT JOIN PROPHET_TABLE AS T ON(O.PACKAGE_CODE = T.PACKAGE_CODE AND T.PLAN_COMPONENT = O.PLAN_COMPONENT AND T.SUB_CHANNEL = O.SUB_CHANNEL)
+--WHERE M.[FILENAME] IN( 'C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
+--AND T.GROUP_TYPE1 IS NULL
 
 
 
@@ -445,51 +663,51 @@ from _Mortality_Result
 
 
 ------------------------------------------------------------------------------------------------------------
-------- Checking ETI&RPU -----
+------- CHECKING ETI&RPU -----
 
 
---select t.[filename],t.Group_Type1,o.[PLAN_COMPONENT],o.[Sub_Channel],m.*
---from Prophet_Mort as m left join (select CERNO_POLNO,PLAN_COMPONENT,PACKAGE_CODE,sub_channel from Data_ETIRPU ) as o on(/*m.PACKAGE_CODE = o.PACKAGE_CODE and*/ m.POL_NUMBER = o.CERNO_POLNO )
---left join Prophet_Table as t on(o.PACKAGE_CODE = t.PACKAGE_CODE and t.PLAN_COMPONENT = o.plan_Component and t.SUB_CHANNEL = o.sub_Channel)
---where m.[FILENAME] In( 'C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
-----and t.group_Type1 is null
---and t.Group_Type1 ='WL'
-
-
-
-
-
---select t.[filename],t.Group_Type1,o.[PLAN_COMPONENT],o.[Sub_Channel],m.*
---from Prophet_Mort as m left join (select CERNO_POLNO,PLAN_COMPONENT,PACKAGE_CODE,sub_channel from Data_ETIRPU ) as o on(/*m.PACKAGE_CODE = o.PACKAGE_CODE and*/ m.POL_NUMBER = o.CERNO_POLNO )
---left join Prophet_Table as t on(o.PACKAGE_CODE = t.PACKAGE_CODE and t.PLAN_COMPONENT = o.plan_Component and t.SUB_CHANNEL = o.sub_Channel)
---where m.[FILENAME] not In( 'C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
-----and t.group_Type1 is null
---and t.Group_Type1 ='WL'
---and o.PLAN_COMPONENT = 'WAT004'
+--SELECT T.[FILENAME],T.GROUP_TYPE1,O.[PLAN_COMPONENT],O.[SUB_CHANNEL],M.*
+--FROM PROPHET_MORT AS M LEFT JOIN (SELECT CERNO_POLNO,PLAN_COMPONENT,PACKAGE_CODE,SUB_CHANNEL FROM DATA_ETIRPU ) AS O ON(/*M.PACKAGE_CODE = O.PACKAGE_CODE AND*/ M.POL_NUMBER = O.CERNO_POLNO )
+--LEFT JOIN PROPHET_TABLE AS T ON(O.PACKAGE_CODE = T.PACKAGE_CODE AND T.PLAN_COMPONENT = O.PLAN_COMPONENT AND T.SUB_CHANNEL = O.SUB_CHANNEL)
+--WHERE M.[FILENAME] IN( 'C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
+----AND T.GROUP_TYPE1 IS NULL
+--AND T.GROUP_TYPE1 ='WL'
 
 
 
 
-----select filename,count(*) as [num]
-----from  Prophet_Mort
-----group by filename
+
+--SELECT T.[FILENAME],T.GROUP_TYPE1,O.[PLAN_COMPONENT],O.[SUB_CHANNEL],M.*
+--FROM PROPHET_MORT AS M LEFT JOIN (SELECT CERNO_POLNO,PLAN_COMPONENT,PACKAGE_CODE,SUB_CHANNEL FROM DATA_ETIRPU ) AS O ON(/*M.PACKAGE_CODE = O.PACKAGE_CODE AND*/ M.POL_NUMBER = O.CERNO_POLNO )
+--LEFT JOIN PROPHET_TABLE AS T ON(O.PACKAGE_CODE = T.PACKAGE_CODE AND T.PLAN_COMPONENT = O.PLAN_COMPONENT AND T.SUB_CHANNEL = O.SUB_CHANNEL)
+--WHERE M.[FILENAME] NOT IN( 'C_ETIL','CTETI_','C_PUP_','C_PUPL','CTPU__')
+----AND T.GROUP_TYPE1 IS NULL
+--AND T.GROUP_TYPE1 ='WL'
+--AND O.PLAN_COMPONENT = 'WAT004'
 
 
 
-----select filename,Reslt_Date,sum(Exposure_Case) as [Sum_Expo_C]
-----from Prophet_Mort
-----where [Type] ='Basic'
-----group by FILENAME,Reslt_Date
+
+----SELECT FILENAME,COUNT(*) AS [NUM]
+----FROM  PROPHET_MORT
+----GROUP BY FILENAME
 
 
 
----- Make the UL and ETI&RPU
+----SELECT FILENAME,RESLT_DATE,SUM(EXPOSURE_CASE) AS [SUM_EXPO_C]
+----FROM PROPHET_MORT
+----WHERE [TYPE] ='BASIC'
+----GROUP BY FILENAME,RESLT_DATE
 
-----select o.*
-----from Prophet_Mort as o left join (select * 
-----from ACT_DATA_201809..TMP_ATF020PF 
-----where CUR_POL_STS in('10','11','12','13')) as d on(o.POL_NUMBER = d.CERNO_POLNO and o.PACKAGE_CODE = d.PACKAGE_CODE )
-----where o.[FILENAME] in('C_ETI_'
+
+
+---- MAKE THE UL AND ETI&RPU
+
+----SELECT O.*
+----FROM PROPHET_MORT AS O LEFT JOIN (SELECT * 
+----FROM ACT_DATA_201809..TMP_ATF020PF 
+----WHERE CUR_POL_STS IN('10','11','12','13')) AS D ON(O.POL_NUMBER = D.CERNO_POLNO AND O.PACKAGE_CODE = D.PACKAGE_CODE )
+----WHERE O.[FILENAME] IN('C_ETI_'
 ----,'C_ETIL'
 ----,'C_PUP_'
 ----,'C_PUPL'
@@ -498,4 +716,4 @@ from _Mortality_Result
 
 
 
------Rename Prophet_Merge_All_201612_201712
+-----RENAME PROPHET_MERGE_ALL_201612_201712
